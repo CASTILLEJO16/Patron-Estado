@@ -386,13 +386,21 @@ class ACController {
   }
 
   async adjustTemp(delta) {
-    const res = await fetch(`${API_URL}/temp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ delta })
-    });
-    const data = await res.json();
-    this.updateFromBackend(data);
+    try {
+      console.log(`Ajustando temperatura: ${delta > 0 ? '+' : ''}${delta}°C`);
+      const res = await fetch(`${API_URL}/temp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delta })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      console.log('Respuesta:', data);
+      this.updateFromBackend(data);
+    } catch (e) {
+      console.error('Error ajustando temperatura:', e);
+      showError(`Error al ajustar temperatura: ${e.message}`);
+    }
   }
 
   async triggerError() {
