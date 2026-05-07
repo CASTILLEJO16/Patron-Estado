@@ -572,19 +572,46 @@ async function toggleSim() {
     return;
   }
   simRunning = true;
-  document.getElementById('simBtn').textContent = '■ Detener';
+  document.getElementById('simBtn').textContent = '■ Detener (3 ciclos)';
   document.getElementById('simBtn').classList.add('running');
 
-  // Ejecutar ciclo de simulación vía API
+  // Ejecutar los 3 ciclos de simulación vía API
   try {
     const res = await fetch(`${API_URL}/ciclo`, { method: 'POST' });
     const data = await res.json();
+    
+    // Mostrar info de los ciclos en el log
+    const wrap = document.getElementById('logWrap');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.style.borderLeftColor = '#00e5a0';
+    entry.innerHTML = `<span style="color:#00e5a0; font-weight:bold">▶ INICIANDO 3 CICLOS</span><br>Ciclo 1: ${data.resumen.ciclo_1}<br>Ciclo 2: ${data.resumen.ciclo_2}<br>Ciclo 3: ${data.resumen.ciclo_3}`;
+    wrap.prepend(entry);
 
-    // Mostrar pasos del ciclo con delay
-    for (let i = 0; i < data.ciclo.length && simRunning; i++) {
-      ac.updateFromBackend(data.ciclo[i]);
-      await new Promise(r => setTimeout(r, 800));
+    // Mostrar pasos de los 3 ciclos con delay
+    for (let i = 0; i < data.ciclos.length && simRunning; i++) {
+      const step = data.ciclos[i];
+      ac.updateFromBackend(step);
+      
+      // Log especial al cambiar de ciclo
+      if (step.paso && step.paso.includes('inicio')) {
+        const cicloEntry = document.createElement('div');
+        cicloEntry.className = 'log-entry';
+        cicloEntry.style.borderLeftColor = '#e8c840';
+        cicloEntry.innerHTML = `<span style="color:#e8c840; font-weight:bold">📍 CICLO ${step.ciclo}</span> - ${step.paso}`;
+        wrap.prepend(cicloEntry);
+      }
+      
+      await new Promise(r => setTimeout(r, 600));
     }
+    
+    // Mostrar finalización
+    const finalEntry = document.createElement('div');
+    finalEntry.className = 'log-entry';
+    finalEntry.style.borderLeftColor = '#00e5a0';
+    finalEntry.innerHTML = `<span style="color:#00e5a0; font-weight:bold">✓ SIMULACIÓN COMPLETADA</span>`;
+    wrap.prepend(finalEntry);
+    
   } catch (e) {
     showError('Error ejecutando simulación: ' + e.message);
   }

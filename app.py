@@ -188,26 +188,141 @@ def api_reset():
 
 @app.route('/api/ciclo', methods=['POST'])
 def api_ciclo():
-    """Ejecuta un ciclo completo de simulación automática."""
+    """Ejecuta los 3 ciclos de simulación: FRIO, ERROR/RESET, CALOR."""
     results = []
     
-    # Ciclo de enfriamiento
+    # ========== CICLO 1: Enfriamiento completo (Modo FRIO) ==========
     ac.apagar()
-    ac.simular_cambio_ambiental(28.0)
+    ac.temperatura_actual = 28.0
     ac.temperatura_deseada = 22.0
     ac.encender()
     ac.set_modo('FRIO')
-    results.append(get_estado_info())
+    results.append({'ciclo': 1, 'paso': 'inicio_frio', **get_estado_info()})
     
-    # Simular enfriamiento progresivo
-    temp = 28.0
-    while temp > 23.0:
-        ac.simular_cambio_ambiental(temp)
+    # Fase de arranque - bajar temperatura rápido
+    temp_simulada = 28.0
+    while temp_simulada > 24.0:
+        ac.simular_cambio_ambiental(temp_simulada)
         ac.monitorear()
-        temp -= 1.5
-        results.append(get_estado_info())
+        estado_class = ac._estado.__class__.__name__
+        results.append({'ciclo': 1, 'paso': 'arranque', **get_estado_info()})
+        if estado_class != 'EstadoArranque':
+            break
+        temp_simulada -= 1.5
     
-    return jsonify({'ciclo': results, 'final': get_estado_info()})
+    # Fase activa frío - bajar temperatura más lento
+    while temp_simulada > 22.5:
+        ac.simular_cambio_ambiental(temp_simulada)
+        ac.monitorear()
+        estado_class = ac._estado.__class__.__name__
+        results.append({'ciclo': 1, 'paso': 'activo_frio', **get_estado_info()})
+        if estado_class != 'EstadoActivoFrio':
+            break
+        temp_simulada -= 0.8
+    
+    # Llegar a temperatura objetivo - mantenimiento
+    ac.simular_cambio_ambiental(22.5)
+    ac.monitorear()
+    results.append({'ciclo': 1, 'paso': 'cerca_objetivo', **get_estado_info()})
+    
+    # Mantenimiento
+    for _ in range(2):
+        ac.monitorear()
+        results.append({'ciclo': 1, 'paso': 'mantenimiento', **get_estado_info()})
+    
+    # Simular cambio ambiental - ajuste
+    ac.simular_cambio_ambiental(26.0)
+    ac.monitorear()
+    results.append({'ciclo': 1, 'paso': 'ajuste', **get_estado_info()})
+    
+    # Volver a mantenimiento
+    while temp_simulada < 22.8:
+        ac.simular_cambio_ambiental(temp_simulada)
+        ac.monitorear()
+        estado_class = ac._estado.__class__.__name__
+        results.append({'ciclo': 1, 'paso': 'vuelta_mantenimiento', **get_estado_info()})
+        if estado_class == 'EstadoMantenimiento':
+            break
+        temp_simulada -= 0.8
+    
+    ac.monitorear()
+    results.append({'ciclo': 1, 'paso': 'fin_frio', **get_estado_info()})
+    ac.apagar()
+    results.append({'ciclo': 1, 'paso': 'apagado', **get_estado_info()})
+    
+    # ========== CICLO 2: Error y Reset ==========
+    ac.temperatura_actual = 25.0
+    ac.encender()
+    ac.set_modo('FRIO')
+    results.append({'ciclo': 2, 'paso': 'inicio_error', **get_estado_info()})
+    
+    ac.simular_cambio_ambiental(23.0)
+    ac.monitorear()
+    results.append({'ciclo': 2, 'paso': 'antes_error', **get_estado_info()})
+    
+    # Simular error
+    ac.set_estado(EstadoError(ac))
+    results.append({'ciclo': 2, 'paso': 'error_activado', **get_estado_info()})
+    
+    # Intentar operaciones bloqueadas
+    ac.encender()
+    results.append({'ciclo': 2, 'paso': 'error_encender_bloqueado', **get_estado_info()})
+    ac.apagar()
+    results.append({'ciclo': 2, 'paso': 'error_apagar_bloqueado', **get_estado_info()})
+    ac.set_modo('CALOR')
+    results.append({'ciclo': 2, 'paso': 'error_modo_bloqueado', **get_estado_info()})
+    
+    # Resetear
+    ac.reset()
+    results.append({'ciclo': 2, 'paso': 'reset_completado', **get_estado_info()})
+    ac.apagar()
+    
+    # ========== CICLO 3: Calefacción (Modo CALOR) ==========
+    ac.temperatura_actual = 15.0
+    ac.temperatura_deseada = 22.0
+    ac.encender()
+    ac.set_modo('CALOR')
+    results.append({'ciclo': 3, 'paso': 'inicio_calor', **get_estado_info()})
+    
+    # Fase de arranque - subir temperatura rápido
+    temp_simulada = 15.0
+    while temp_simulada < 20.0:
+        ac.simular_cambio_ambiental(temp_simulada)
+        ac.monitorear()
+        estado_class = ac._estado.__class__.__name__
+        results.append({'ciclo': 3, 'paso': 'arranque_calor', **get_estado_info()})
+        if estado_class != 'EstadoArranque':
+            break
+        temp_simulada += 1.5
+    
+    # Fase activa calor - subir temperatura más lento
+    while temp_simulada < 21.5:
+        ac.simular_cambio_ambiental(temp_simulada)
+        ac.monitorear()
+        estado_class = ac._estado.__class__.__name__
+        results.append({'ciclo': 3, 'paso': 'activo_calor', **get_estado_info()})
+        if estado_class != 'EstadoActivoCalor':
+            break
+        temp_simulada += 0.8
+    
+    # Llegar a temperatura objetivo
+    ac.simular_cambio_ambiental(21.8)
+    ac.monitorear()
+    results.append({'ciclo': 3, 'paso': 'cerca_objetivo_calor', **get_estado_info()})
+    
+    # Mantenimiento
+    for _ in range(2):
+        ac.monitorear()
+        results.append({'ciclo': 3, 'paso': 'mantenimiento_calor', **get_estado_info()})
+    
+    ac.apagar()
+    results.append({'ciclo': 3, 'paso': 'fin_calor', **get_estado_info()})
+    
+    return jsonify({'ciclos': results, 'final': get_estado_info(), 'resumen': {
+        'ciclo_1': 'Enfriamiento FRIO',
+        'ciclo_2': 'Error y Reset',
+        'ciclo_3': 'Calefacción CALOR'
+    }})
 
 
 if __name__ == '__main__':
