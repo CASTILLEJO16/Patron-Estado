@@ -312,7 +312,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 <script>
 /* ══════════════════════════════════════════════
    PATRÓN ESTADO — Sistema Inverter AC
+   Conectado al backend Python Flask
 ══════════════════════════════════════════════ */
+
+const API_URL = 'http://localhost:5000/api';
 
 const STATES = {
   APAGADO:       { name:'Apagado',        color:'#5a6080', desc:'Sin energía al compresor.', comp:0 },
@@ -325,96 +328,109 @@ const STATES = {
   ERROR:         { name:'Error / Protección', color:'#ff2d55', desc:'Bloqueo de seguridad. Ejecuta reset() para recuperar.', comp:0 },
 };
 
-class AireAcondicionado {
+let prevState = 'APAGADO';
+
+class ACController {
   constructor() {
     this.state = 'APAGADO';
     this.tempActual = 28.0;
     this.tempDeseada = 22.0;
     this.modo = null;
-    this.monitorInterval = null;
   }
 
-  setState(newState) {
-    const prev = this.state;
-    this.state = newState;
+  async fetchState() {
+    try {
+      const res = await fetch(`${API_URL}/state`);
+      const data = await res.json();
+      this.updateFromBackend(data);
+      return data;
+    } catch (e) {
+      console.error('Error conectando al backend:', e);
+      showError('No se pudo conectar al servidor Python. ¿Está corriendo app.py?');
+    }
+  }
+
+  updateFromBackend(data) {
+    const oldState = this.state;
+    this.state = data.state;
+    this.tempActual = data.temp_actual;
+    this.tempDeseada = data.temp_deseado;
+    this.modo = data.modo;
     render(this);
-    logTransition(prev, newState);
-    if (this.monitorInterval) clearInterval(this.monitorInterval);
-    if (!['APAGADO','ERROR'].includes(newState)) {
-      this.monitorInterval = setInterval(() => this._monitor(), 1200);
+    if (oldState !== this.state) {
+      logTransition(oldState, this.state);
+    }
+    prevState = this.state;
+  }
+
+  async togglePower() {
+    if (this.state === 'APAGADO') {
+      const res = await fetch(`${API_URL}/encender`, { method: 'POST' });
+      const data = await res.json();
+      this.updateFromBackend(data);
+    } else {
+      const res = await fetch(`${API_URL}/apagar`, { method: 'POST' });
+      const data = await res.json();
+      this.updateFromBackend(data);
     }
   }
 
-  togglePower() {
-    if (this.state === 'APAGADO') this.encender();
-    else this.apagar();
+  async setModo(modo) {
+    const res = await fetch(`${API_URL}/modo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modo })
+    });
+    const data = await res.json();
+    this.updateFromBackend(data);
   }
 
-  encender() {
-    if (this.state !== 'APAGADO') return;
-    this.setState('STANDBY');
+  async adjustTemp(delta) {
+    const res = await fetch(`${API_URL}/temp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delta })
+    });
+    const data = await res.json();
+    this.updateFromBackend(data);
   }
 
-  apagar() {
-    if (['APAGADO','ERROR'].includes(this.state)) return;
-    if (this.monitorInterval) clearInterval(this.monitorInterval);
-    this.modo = null;
-    this.setState('APAGADO');
+  async triggerError() {
+    const res = await fetch(`${API_URL}/error`, { method: 'POST' });
+    const data = await res.json();
+    this.updateFromBackend(data);
   }
 
-  setModo(modo) {
-    if (!['STANDBY','MANTENIMIENTO','AJUSTE','ACTIVO_FRIO','ACTIVO_CALOR'].includes(this.state)) {
-      if (this.state === 'APAGADO') { this.encender(); }
-      else return;
-    }
-    this.modo = modo;
-    this.setState('ARRANQUE');
-    setTimeout(() => {
-      if (this.state === 'ARRANQUE') {
-        this.setState(modo === 'FRIO' ? 'ACTIVO_FRIO' : 'ACTIVO_CALOR');
-      }
-    }, 2500);
+  async reset() {
+    const res = await fetch(`${API_URL}/reset`, { method: 'POST' });
+    const data = await res.json();
+    this.updateFromBackend(data);
   }
 
-  adjustTemp(delta) {
-    this.tempDeseada = Math.max(16, Math.min(30, this.tempDeseada + delta));
-    render(this);
-    if (['MANTENIMIENTO','ACTIVO_FRIO','ACTIVO_CALOR'].includes(this.state)) {
-      this.setState('AJUSTE');
-    }
+  async monitor() {
+    const res = await fetch(`${API_URL}/monitor`, { method: 'POST' });
+    const data = await res.json();
+    this.updateFromBackend(data);
   }
 
-  triggerError() {
-    if (this.state === 'APAGADO') return;
-    if (this.monitorInterval) clearInterval(this.monitorInterval);
-    this.setState('ERROR');
+  async simularTemp(temp) {
+    const res = await fetch(`${API_URL}/simular`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ temperatura: temp })
+    });
+    const data = await res.json();
+    this.updateFromBackend(data);
   }
+}
 
-  reset() {
-    if (this.state !== 'ERROR') return;
-    this.modo = null;
-    this.setState('APAGADO');
-  }
-
-  _monitor() {
-    const s = this.state;
-    if (s === 'ACTIVO_FRIO') {
-      this.tempActual = Math.max(this.tempDeseada - 0.5, this.tempActual - 0.4);
-      if (Math.abs(this.tempActual - this.tempDeseada) <= 0.6) this.setState('MANTENIMIENTO');
-    } else if (s === 'ACTIVO_CALOR') {
-      this.tempActual = Math.min(this.tempDeseada + 0.5, this.tempActual + 0.4);
-      if (Math.abs(this.tempActual - this.tempDeseada) <= 0.6) this.setState('MANTENIMIENTO');
-    } else if (s === 'MANTENIMIENTO') {
-      const drift = (Math.random() - 0.45) * 0.15;
-      this.tempActual = Math.max(10, Math.min(40, this.tempActual + drift));
-      if (Math.abs(this.tempActual - this.tempDeseada) > 1.2) this.setState('AJUSTE');
-    } else if (s === 'AJUSTE') {
-      const dir = this.modo === 'FRIO' ? -0.3 : 0.3;
-      this.tempActual += dir;
-      if (Math.abs(this.tempActual - this.tempDeseada) <= 0.7) this.setState('MANTENIMIENTO');
-    }
-    render(this);
-  }
+function showError(msg) {
+  const wrap = document.getElementById('logWrap');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.style.borderLeftColor = '#ff2d55';
+  entry.innerHTML = `<span style="color:#ff2d55">ERROR:</span> ${msg}`;
+  wrap.prepend(entry);
 }
 
 /* ── PARTICLES ── */
@@ -533,10 +549,8 @@ function logTransition(from, to) {
 
 /* ── SIMULATION ── */
 let simRunning = false;
-let simSteps = [];
-let simIdx = 0;
 
-function toggleSim() {
+async function toggleSim() {
   if (simRunning) {
     simRunning = false;
     document.getElementById('simBtn').textContent = '▶ Simular ciclo';
@@ -547,39 +561,38 @@ function toggleSim() {
   document.getElementById('simBtn').textContent = '■ Detener';
   document.getElementById('simBtn').classList.add('running');
 
-  const steps = [
-    () => { ac.apagar(); ac.tempActual = 28; },
-    () => ac.encender(),
-    () => ac.setModo('FRIO'),
-    null, null, null, null,
-    () => ac.adjustTemp(-2),
-    null, null, null,
-    () => ac.triggerError(),
-    () => ac.reset(),
-    () => ac.encender(),
-    () => ac.setModo('CALOR'),
-    null, null, null,
-    () => ac.apagar(),
-  ];
+  // Ejecutar ciclo de simulación vía API
+  try {
+    const res = await fetch(`${API_URL}/ciclo`, { method: 'POST' });
+    const data = await res.json();
 
-  let i = 0;
-  function runStep() {
-    if (!simRunning || i >= steps.length) {
-      simRunning = false;
-      document.getElementById('simBtn').textContent = '▶ Simular ciclo';
-      document.getElementById('simBtn').classList.remove('running');
-      return;
+    // Mostrar pasos del ciclo con delay
+    for (let i = 0; i < data.ciclo.length && simRunning; i++) {
+      ac.updateFromBackend(data.ciclo[i]);
+      await new Promise(r => setTimeout(r, 800));
     }
-    if (steps[i]) steps[i]();
-    i++;
-    setTimeout(runStep, 1800);
+  } catch (e) {
+    showError('Error ejecutando simulación: ' + e.message);
   }
-  runStep();
+
+  simRunning = false;
+  document.getElementById('simBtn').textContent = '▶ Simular ciclo';
+  document.getElementById('simBtn').classList.remove('running');
+}
+
+// Polling automático cada 2 segundos
+async function startPolling() {
+  await ac.fetchState();
+  setInterval(async () => {
+    if (!simRunning) {
+      await ac.fetchState();
+    }
+  }, 2000);
 }
 
 /* ── INIT ── */
-const ac = new AireAcondicionado();
-render(ac);
+const ac = new ACController();
+startPolling();
 logTransition('INICIO', 'APAGADO');
 </script>
 </body>

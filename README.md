@@ -1,6 +1,6 @@
 # Aire Acondicionado Inverter - Patrón Estado
 
-Sistema completo en Python 3.10+ usando el Patrón de Diseño Estado que simula el comportamiento de un aire acondicionado con tecnología Inverter.
+Sistema completo en Python 3.10+ usando el Patrón de Diseño Estado que simula el comportamiento de un aire acondicionado con tecnología Inverter, con interfaz web conectada al backend Python.
 
 ## Estructura del Proyecto
 
@@ -8,8 +8,9 @@ Sistema completo en Python 3.10+ usando el Patrón de Diseño Estado que simula 
 Patron-Estado/
 ├── estado_ac.py                # Clase base abstracta EstadoAC
 ├── aire_acondicionado.py       # Contexto (AireAcondicionado)
-├── main.py                     # Punto de entrada y simulación
-├── estados/
+├── main.py                     # Simulación por consola
+├── app.py                      # Backend Flask (API REST)
+├── estados/                    # 8 estados concretos
 │   ├── __init__.py
 │   ├── estado_apagado.py
 │   ├── estado_standby.py
@@ -19,7 +20,8 @@ Patron-Estado/
 │   ├── estado_mantenimiento.py
 │   ├── estado_ajuste.py
 │   └── estado_error.py
-├── index.html                  # Interfaz web visual del mini-split
+├── index.html                  # Interfaz web conectada al backend
+├── requirements.txt            # Dependencias Flask
 └── README.md                   # Este archivo
 ```
 
@@ -34,33 +36,63 @@ Patron-Estado/
 7. **Ajuste** - Adapta frecuencia por cambio ambiental
 8. **Error/Protección** - Bloqueo por anomalías
 
-## Ejecución
+## Instalación
 
-### Python (consola):
+```bash
+# Instalar dependencias
+pip install -r requirements.txt
+```
+
+## Uso - Sistema Integrado (Interfaz Web + Python)
+
+**1. Iniciar el backend Flask:**
+```bash
+python app.py
+```
+El servidor iniciará en `http://localhost:5000`
+
+**2. Abrir la interfaz web:**
+Abre `http://localhost:5000` en tu navegador (o abre `index.html` directamente).
+
+**Cómo funciona la integración:**
+- El frontend JavaScript se comunica con el backend Python vía API REST
+- Todas las acciones (encender, cambiar modo, ajustar temp) llaman al backend
+- El backend ejecuta la lógica del Patrón Estado en Python real
+- Los estados y temperaturas se sincronizan automáticamente cada 2 segundos
+
+### API Endpoints
+
+| Endpoint | Método | Descripción |
+|----------|--------|-------------|
+| `/api/state` | GET | Obtener estado actual |
+| `/api/encender` | POST | Encender el AC |
+| `/api/apagar` | POST | Apagar el AC |
+| `/api/modo` | POST | Cambiar modo (FRIO/CALOR) |
+| `/api/temp` | POST | Ajustar temperatura |
+| `/api/monitor` | POST | Ejecutar monitoreo |
+| `/api/error` | POST | Simular error |
+| `/api/reset` | POST | Resetear sistema |
+| `/api/ciclo` | POST | Ejecutar ciclo completo |
+
+## Uso - Solo Consola (opcional)
+
+Para ejecutar solo la simulación por consola sin interfaz web:
 ```bash
 python main.py
 ```
 
-### Interfaz Web:
-Abrir `index.html` en cualquier navegador moderno.
-
-Características de la interfaz:
-- Visualización 3D del mini-split montado en pared
-- Control remoto interactivo
-- Partículas de flujo de aire animadas
-- Panel lateral con métricas en tiempo real
-- Log de transiciones de estado
-- Botón de simulación automática
-
 ## Tecnologías
 
-- **Backend**: Python 3.10+, ABC, OOP
-- **Frontend**: HTML5, CSS3, JavaScript vanilla
-- **Diseño**: Fuente Space Mono + Syne
+- **Backend**: Python 3.10+, Flask, Patrón Estado (State Pattern)
+- **Frontend**: HTML5, CSS3, JavaScript (Fetch API)
+- **Diseño**: Space Mono + Syne, interfaz 3D CSS
 
-## Características
+## Características de la Interfaz Web
 
-- Simulación de 3 ciclos: enfriamiento, error/recuperación, calefacción
-- Compresor Inverter que ajusta frecuencia según demanda
-- Transiciones automáticas entre estados
-- Interfaz visual con retroalimentación en tiempo real
+- **Mini-split visual** montado en pared con display LED
+- **Control remoto** interactivo con botones reales
+- **Partículas de aire** animadas según el modo
+- **Panel de métricas** en tiempo real (temperatura, compresor)
+- **Log de transiciones** entre estados
+- **Simulación automática** de ciclo completo
+- **Conexión real** con el backend Python via API REST
