@@ -9,6 +9,7 @@ from estados.estado_arranque import EstadoArranque
 from estados.estado_activo_frio import EstadoActivoFrio
 from estados.estado_activo_calor import EstadoActivoCalor
 from estados.estado_mantenimiento import EstadoMantenimiento
+from estados.estado_ajuste import EstadoAjuste
 from estados.estado_error import EstadoError
 
 app = Flask(__name__, static_folder='.')
