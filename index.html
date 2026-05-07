@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema Inverter — Patrón Estado</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d0f14;
+  --room-wall: #1a1d26;
+  --room-floor: #131520;
+  --room-ceil: #12141e;
+  --accent-cold: #00d4ff;
+  --accent-heat: #ff6b35;
+  --accent-idle: #a0a8c0;
+  --accent-error: #ff2d55;
+  --accent-ok: #00e5a0;
+  --text: #e8eaf2;
+  --text-dim: #5a6080;
+  --panel: #161922;
+  --panel-b: #1f2333;
+  --mono: 'Space Mono', monospace;
+  --sans: 'Syne', sans-serif;
+  --state-color: var(--accent-idle);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden}
+
+/* ── LAYOUT ── */
+.app{display:grid;grid-template-columns:1fr 280px;grid-template-rows:auto 1fr auto;min-height:100vh;gap:0}
+.header{grid-column:1/-1;padding:14px 24px;border-bottom:1px solid #ffffff10;display:flex;align-items:center;justify-content:space-between}
+.header-title{font-size:13px;letter-spacing:3px;text-transform:uppercase;color:var(--text-dim);font-family:var(--mono)}
+.state-badge{font-family:var(--mono);font-size:11px;padding:4px 14px;border-radius:2px;border:1px solid var(--state-color);color:var(--state-color);letter-spacing:2px;text-transform:uppercase;transition:all .4s}
+
+/* ── ROOM ── */
+.room-wrap{grid-column:1;grid-row:2;position:relative;overflow:hidden;background:var(--room-wall)}
+.room{width:100%;height:100%;min-height:420px;position:relative;display:flex;flex-direction:column}
+
+/* Perspective room */
+.room-scene{flex:1;position:relative;perspective:800px}
+.room-back{position:absolute;inset:0;background:var(--room-wall)}
+.room-left-wall{position:absolute;left:0;top:0;bottom:0;width:18%;background:#141620;transform-origin:left center;transform:rotateY(18deg);border-right:1px solid #ffffff06}
+.room-right-wall{position:absolute;right:0;top:0;bottom:0;width:18%;background:#141620;transform-origin:right center;transform:rotateY(-18deg);border-left:1px solid #ffffff06}
+.room-floor{position:absolute;bottom:0;left:0;right:0;height:35%;background:var(--room-floor);transform-origin:bottom center}
+.floor-line{position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,#ffffff08,transparent)}
+.floor-grid{position:absolute;inset:0;opacity:.4;background-image:repeating-linear-gradient(0deg,transparent,transparent 39px,#ffffff05 39px,#ffffff05 40px),repeating-linear-gradient(90deg,transparent,transparent 39px,#ffffff05 39px,#ffffff05 40px)}
+
+/* Ceiling shadow */
+.ceil-shadow{position:absolute;top:0;left:0;right:0;height:60px;background:linear-gradient(#0a0c12,transparent)}
+
+/* ── MINISPLIT ON WALL ── */
+.minisplit{position:absolute;top:14%;left:50%;transform:translateX(-50%);width:260px;cursor:pointer;z-index:10}
+.ms-body{background:#1e2235;border-radius:10px;border:1px solid #2a2f45;padding:0;overflow:hidden;box-shadow:0 8px 40px #00000060,0 0 0 1px #ffffff08;position:relative}
+.ms-top-strip{height:5px;background:var(--state-color);transition:background .5s;border-radius:10px 10px 0 0}
+.ms-face{padding:10px 14px 8px;display:flex;align-items:center;gap:12px}
+.ms-display{flex:1;background:#0a0d15;border-radius:6px;padding:7px 10px;border:1px solid #ffffff08}
+.ms-temp-row{display:flex;align-items:baseline;gap:6px}
+.ms-temp-main{font-family:var(--mono);font-size:24px;font-weight:700;color:var(--state-color);transition:color .5s;line-height:1}
+.ms-temp-unit{font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+.ms-target-row{font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:2px}
+.ms-target-val{color:var(--accent-ok)}
+.ms-icons{display:flex;gap:6px;margin-top:5px}
+.ms-icon{width:16px;height:16px;border-radius:2px;display:flex;align-items:center;justify-content:center;opacity:.3;transition:opacity .3s;font-size:10px}
+.ms-icon.on{opacity:1}
+.ms-right{display:flex;flex-direction:column;align-items:center;gap:6px}
+.ms-led-ring{width:28px;height:28px;border-radius:50%;border:2px solid var(--state-color);display:flex;align-items:center;justify-content:center;transition:border-color .5s;position:relative}
+.ms-led-inner{width:10px;height:10px;border-radius:50%;background:var(--state-color);transition:background .5s}
+.ms-power-btn{width:28px;height:28px;border-radius:50%;background:#0f111a;border:1px solid #2a2f45;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:var(--text-dim);transition:all .2s}
+.ms-power-btn:hover{border-color:var(--state-color);color:var(--state-color)}
+.ms-louver{height:6px;display:flex;align-items:center;padding:0 14px;gap:2px;background:#161922}
+.ms-louver-blade{flex:1;height:3px;background:#2a2f45;border-radius:1px}
+.ms-louver.animated .ms-louver-blade{animation:louverWave 1.5s ease-in-out infinite;background:var(--state-color);opacity:.5}
+.ms-louver-blade:nth-child(2){animation-delay:.15s}
+.ms-louver-blade:nth-child(3){animation-delay:.3s}
+.ms-louver-blade:nth-child(4){animation-delay:.45s}
+.ms-louver-blade:nth-child(5){animation-delay:.6s}
+@keyframes louverWave{0%,100%{opacity:.3;transform:scaleY(1)}50%{opacity:.8;transform:scaleY(1.8)}}
+
+/* Buttons on device */
+.ms-btns{display:flex;gap:4px;padding:6px 14px 8px;background:#161922}
+.ms-btn{flex:1;height:22px;border-radius:3px;background:#0f111a;border:1px solid #2a2f45;color:var(--text-dim);font-family:var(--mono);font-size:8px;cursor:pointer;letter-spacing:.5px;transition:all .2s;text-transform:uppercase}
+.ms-btn:hover{border-color:var(--state-color);color:var(--state-color)}
+.ms-btn.active-btn{background:var(--state-color);color:#0a0d15;border-color:var(--state-color);font-weight:700}
+
+/* ── AIRFLOW PARTICLES ── */
+.airflow{position:absolute;top:calc(14% + 90px);left:50%;transform:translateX(-50%);width:280px;height:200px;pointer-events:none;opacity:0;transition:opacity .6s}
+.airflow.on{opacity:1}
+.particle{position:absolute;border-radius:50%;animation:fall 2.5s ease-in infinite}
+@keyframes fall{0%{transform:translateY(0) scaleX(1);opacity:.7}80%{opacity:.3}100%{transform:translateY(160px) scaleX(.4);opacity:0}}
+
+/* ── ROOM AMBIENT ── */
+.room-ambient{position:absolute;inset:0;pointer-events:none;transition:opacity .8s}
+
+/* ── FURNITURE (decorative) ── */
+.furniture{position:absolute;bottom:35%;left:5%;right:5%;display:flex;justify-content:space-between;align-items:flex-end;pointer-events:none}
+.sofa{width:130px;height:45px;background:#1a1d28;border-radius:6px 6px 0 0;border:1px solid #ffffff08;position:relative}
+.sofa::before{content:'';position:absolute;top:-14px;left:0;right:0;height:16px;background:#1e2235;border-radius:6px 6px 0 0;border:1px solid #ffffff08}
+.plant{width:28px;height:55px;background:#0f1a12;border-radius:50% 50% 0 0;border:1px solid #1a3020;position:relative}
+.plant::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:10px;height:18px;background:#0a100c;border-radius:0 0 3px 3px}
+
+/* ── REMOTE ── */
+.remote-wrap{position:absolute;bottom:37%;right:8%;z-index:20}
+.remote{width:68px;background:#111420;border-radius:12px;border:1px solid #2a2f45;padding:8px 6px 10px;box-shadow:0 12px 40px #00000080;display:flex;flex-direction:column;align-items:center;gap:6px}
+.remote-screen{width:100%;background:#0a0d15;border-radius:5px;padding:6px 4px;text-align:center;border:1px solid #ffffff08}
+.remote-screen-mode{font-family:var(--mono);font-size:7px;color:var(--state-color);letter-spacing:1px;transition:color .5s}
+.remote-screen-temp{font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text);line-height:1.1}
+.remote-big-btn{width:36px;height:36px;border-radius:50%;background:var(--state-color);border:none;cursor:pointer;font-size:15px;color:#0a0d15;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all .3s;box-shadow:0 0 0 3px #ffffff10}
+.remote-big-btn:hover{transform:scale(1.1)}
+.remote-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;width:100%}
+.r-btn{height:20px;border-radius:3px;background:#1a1d28;border:1px solid #2a2f45;color:var(--text-dim);font-family:var(--mono);font-size:7px;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center}
+.r-btn:hover{background:var(--state-color);color:#0a0d15;border-color:var(--state-color)}
+.r-btn.r-err{grid-column:1/-1;background:#1a0f12;border-color:#3a1520;color:#ff2d5580;font-size:6px;letter-spacing:.5px}
+.r-btn.r-err:hover{background:#ff2d55;color:#fff}
+.r-btn.r-reset{grid-column:1/-1;background:#0a1a0f;border-color:#153020;color:#00e5a060;font-size:6px}
+.r-btn.r-reset:hover{background:#00e5a0;color:#000}
+.remote-label{font-family:var(--mono);font-size:7px;color:var(--text-dim);letter-spacing:1px;text-align:center}
+
+/* ── SIDE PANEL ── */
+.side-panel{grid-column:2;grid-row:2;background:var(--panel);border-left:1px solid #ffffff08;display:flex;flex-direction:column;overflow:hidden}
+.panel-section{padding:14px 16px;border-bottom:1px solid #ffffff08}
+.panel-label{font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px}
+.state-indicator{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.state-dot{width:8px;height:8px;border-radius:50%;background:var(--state-color);transition:background .5s;flex-shrink:0}
+.state-dot.blink{animation:blink 1s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.state-name{font-family:var(--mono);font-size:12px;color:var(--state-color);transition:color .5s;font-weight:700}
+.state-desc{font-size:11px;color:var(--text-dim);line-height:1.5;margin-top:4px}
+
+.metrics-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.metric{background:var(--panel-b);border-radius:6px;padding:8px 10px;border:1px solid #ffffff06}
+.metric-label{font-family:var(--mono);font-size:8px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase}
+.metric-val{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--text);margin-top:2px;transition:color .4s}
+.metric-unit{font-size:9px;color:var(--text-dim)}
+.metric.accent .metric-val{color:var(--state-color)}
+
+/* Compressor bar */
+.comp-bar-wrap{margin-top:10px}
+.comp-bar-label{display:flex;justify-content:space-between;margin-bottom:5px}
+.comp-bar-track{height:4px;background:#1a1d28;border-radius:2px;overflow:hidden}
+.comp-bar-fill{height:100%;background:var(--state-color);border-radius:2px;transition:width .8s cubic-bezier(.4,0,.2,1),background .5s}
+
+/* Log */
+.log-wrap{flex:1;overflow-y:auto;padding:10px 16px;display:flex;flex-direction:column;gap:4px}
+.log-wrap::-webkit-scrollbar{width:3px}
+.log-wrap::-webkit-scrollbar-track{background:transparent}
+.log-wrap::-webkit-scrollbar-thumb{background:#2a2f45;border-radius:2px}
+.log-entry{font-family:var(--mono);font-size:9px;line-height:1.6;border-left:2px solid #2a2f45;padding-left:8px;color:var(--text-dim);animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.log-entry .log-time{color:#3a4060}
+.log-entry .log-state{font-weight:700}
+
+/* Footer */
+.footer{grid-column:1/-1;padding:8px 24px;border-top:1px solid #ffffff08;display:flex;align-items:center;justify-content:space-between}
+.footer-tip{font-family:var(--mono);font-size:9px;color:var(--text-dim);letter-spacing:1px}
+.sim-btn{font-family:var(--mono);font-size:9px;padding:5px 14px;border-radius:2px;background:transparent;border:1px solid #2a2f45;color:var(--text-dim);cursor:pointer;letter-spacing:1px;text-transform:uppercase;transition:all .2s}
+.sim-btn:hover{border-color:var(--state-color);color:var(--state-color)}
+.sim-btn.running{border-color:var(--accent-ok);color:var(--accent-ok)}
+
+/* ── PARTICLES FACTORY ── */
+.prt{position:absolute;border-radius:50%;pointer-events:none}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header">
+    <span class="header-title">Sistema Inverter · Patrón Estado</span>
+    <span class="state-badge" id="stateBadge">APAGADO</span>
+  </div>
+
+  <!-- ROOM -->
+  <div class="room-wrap">
+    <div class="room">
+      <div class="room-scene">
+        <div class="room-back"></div>
+        <div class="room-left-wall"></div>
+        <div class="room-right-wall"></div>
+        <div class="room-ambient" id="roomAmbient"></div>
+        <div class="ceil-shadow"></div>
+
+        <!-- MINISPLIT -->
+        <div class="minisplit" id="minisplit">
+          <div class="ms-body">
+            <div class="ms-top-strip" id="topStrip"></div>
+            <div class="ms-face">
+              <div class="ms-display">
+                <div class="ms-temp-row">
+                  <span class="ms-temp-main" id="msTempMain">--</span>
+                  <span class="ms-temp-unit">°C</span>
+                </div>
+                <div class="ms-target-row">objetivo: <span class="ms-target-val" id="msTarget">--</span>°C</div>
+                <div class="ms-icons">
+                  <div class="ms-icon" id="iconCold" title="Frío">❄</div>
+                  <div class="ms-icon" id="iconHeat" title="Calor">🔥</div>
+                  <div class="ms-icon" id="iconFan" title="Ventilador">💨</div>
+                </div>
+              </div>
+              <div class="ms-right">
+                <div class="ms-led-ring" id="msLed">
+                  <div class="ms-led-inner" id="msLedInner"></div>
+                </div>
+                <button class="ms-power-btn" id="msPowerBtn" title="Encender/Apagar">⏻</button>
+              </div>
+            </div>
+            <div class="ms-louver" id="msLouver">
+              <div class="ms-louver-blade"></div><div class="ms-louver-blade"></div>
+              <div class="ms-louver-blade"></div><div class="ms-louver-blade"></div>
+              <div class="ms-louver-blade"></div>
+            </div>
+            <div class="ms-btns">
+              <button class="ms-btn" id="btnCold" onclick="ac.setModo('FRIO')">❄ Frío</button>
+              <button class="ms-btn" id="btnHeat" onclick="ac.setModo('CALOR')">🔥 Calor</button>
+              <button class="ms-btn" onclick="ac.adjustTemp(-1)">▼ Temp</button>
+              <button class="ms-btn" onclick="ac.adjustTemp(+1)">▲ Temp</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- AIRFLOW -->
+        <div class="airflow" id="airflow"></div>
+
+        <!-- FURNITURE -->
+        <div class="furniture">
+          <div class="plant"></div>
+          <div class="sofa"></div>
+          <div style="width:40px;height:30px;background:#12151e;border-radius:4px 4px 0 0;border:1px solid #ffffff08"></div>
+        </div>
+
+        <!-- ROOM FLOOR -->
+        <div class="room-floor">
+          <div class="floor-line"></div>
+          <div class="floor-grid"></div>
+        </div>
+
+        <!-- REMOTE -->
+        <div class="remote-wrap">
+          <div class="remote">
+            <div class="remote-label">CONTROL</div>
+            <div class="remote-screen">
+              <div class="remote-screen-mode" id="remoteMode">APAGADO</div>
+              <div class="remote-screen-temp" id="remoteTemp">--°</div>
+            </div>
+            <button class="remote-big-btn" id="remotePower" onclick="ac.togglePower()">⏻</button>
+            <div class="remote-grid">
+              <button class="r-btn" onclick="ac.setModo('FRIO')">❄ FRÍO</button>
+              <button class="r-btn" onclick="ac.setModo('CALOR')">🔥 CALOR</button>
+              <button class="r-btn" onclick="ac.adjustTemp(-1)">▼ -1°</button>
+              <button class="r-btn" onclick="ac.adjustTemp(+1)">▲ +1°</button>
+              <button class="r-btn r-err" onclick="ac.triggerError()">⚠ FALLO</button>
+              <button class="r-btn r-reset" onclick="ac.reset()">↺ RESET</button>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /room-scene -->
+    </div><!-- /room -->
+  </div><!-- /room-wrap -->
+
+  <!-- SIDE PANEL -->
+  <div class="side-panel">
+    <div class="panel-section">
+      <div class="panel-label">Estado actual</div>
+      <div class="state-indicator">
+        <div class="state-dot" id="stateDot"></div>
+        <div class="state-name" id="stateName">Apagado</div>
+      </div>
+      <div class="state-desc" id="stateDesc">Sin energía al compresor. Presiona el botón de encendido para iniciar.</div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Métricas</div>
+      <div class="metrics-grid">
+        <div class="metric accent">
+          <div class="metric-label">Temp actual</div>
+          <div class="metric-val" id="mActual">--<span class="metric-unit">°C</span></div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Objetivo</div>
+          <div class="metric-val" id="mTarget">--<span class="metric-unit">°C</span></div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Modo</div>
+          <div class="metric-val" id="mModo" style="font-size:13px">---</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Compresor</div>
+          <div class="metric-val" id="mComp">0<span class="metric-unit">%</span></div>
+        </div>
+      </div>
+      <div class="comp-bar-wrap">
+        <div class="comp-bar-label">
+          <span style="font-family:var(--mono);font-size:8px;color:var(--text-dim);letter-spacing:1px">POTENCIA COMPRESOR</span>
+          <span style="font-family:var(--mono);font-size:8px;color:var(--state-color)" id="compPct">0%</span>
+        </div>
+        <div class="comp-bar-track"><div class="comp-bar-fill" id="compBar" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div class="panel-section" style="flex-shrink:0">
+      <div class="panel-label">Transiciones</div>
+    </div>
+    <div class="log-wrap" id="logWrap"></div>
+  </div>
+
+  <div class="footer">
+    <span class="footer-tip">PATRÓN ESTADO · ITT · ENE-JUN 2026</span>
+    <button class="sim-btn" id="simBtn" onclick="toggleSim()">▶ Simular ciclo</button>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════
+   PATRÓN ESTADO — Sistema Inverter AC
+══════════════════════════════════════════════ */
+
+const STATES = {
+  APAGADO:       { name:'Apagado',        color:'#5a6080', desc:'Sin energía al compresor.', comp:0 },
+  STANDBY:       { name:'Standby',        color:'#a0a8c0', desc:'Sistema listo, esperando selección de modo.', comp:0 },
+  ARRANQUE:      { name:'Arranque',       color:'#e8c840', desc:'Compresor subiendo al 130% para alcanzar temperatura rápido.', comp:130 },
+  ACTIVO_FRIO:   { name:'Activo — frío',  color:'#00d4ff', desc:'Enfriamiento activo a alta potencia.', comp:90 },
+  ACTIVO_CALOR:  { name:'Activo — calor', color:'#ff6b35', desc:'Calefacción activa a alta potencia.', comp:90 },
+  MANTENIMIENTO: { name:'Mantenimiento',  color:'#00e5a0', desc:'Temperatura alcanzada. Compresor a baja potencia manteniendo estabilidad.', comp:15 },
+  AJUSTE:        { name:'Ajuste',         color:'#c8a020', desc:'Cambio ambiental detectado. Regulando frecuencia del compresor.', comp:55 },
+  ERROR:         { name:'Error / Protección', color:'#ff2d55', desc:'Bloqueo de seguridad. Ejecuta reset() para recuperar.', comp:0 },
+};
+
+class AireAcondicionado {
+  constructor() {
+    this.state = 'APAGADO';
+    this.tempActual = 28.0;
+    this.tempDeseada = 22.0;
+    this.modo = null;
+    this.monitorInterval = null;
+  }
+
+  setState(newState) {
+    const prev = this.state;
+    this.state = newState;
+    render(this);
+    logTransition(prev, newState);
+    if (this.monitorInterval) clearInterval(this.monitorInterval);
+    if (!['APAGADO','ERROR'].includes(newState)) {
+      this.monitorInterval = setInterval(() => this._monitor(), 1200);
+    }
+  }
+
+  togglePower() {
+    if (this.state === 'APAGADO') this.encender();
+    else this.apagar();
+  }
+
+  encender() {
+    if (this.state !== 'APAGADO') return;
+    this.setState('STANDBY');
+  }
+
+  apagar() {
+    if (['APAGADO','ERROR'].includes(this.state)) return;
+    if (this.monitorInterval) clearInterval(this.monitorInterval);
+    this.modo = null;
+    this.setState('APAGADO');
+  }
+
+  setModo(modo) {
+    if (!['STANDBY','MANTENIMIENTO','AJUSTE','ACTIVO_FRIO','ACTIVO_CALOR'].includes(this.state)) {
+      if (this.state === 'APAGADO') { this.encender(); }
+      else return;
+    }
+    this.modo = modo;
+    this.setState('ARRANQUE');
+    setTimeout(() => {
+      if (this.state === 'ARRANQUE') {
+        this.setState(modo === 'FRIO' ? 'ACTIVO_FRIO' : 'ACTIVO_CALOR');
+      }
+    }, 2500);
+  }
+
+  adjustTemp(delta) {
+    this.tempDeseada = Math.max(16, Math.min(30, this.tempDeseada + delta));
+    render(this);
+    if (['MANTENIMIENTO','ACTIVO_FRIO','ACTIVO_CALOR'].includes(this.state)) {
+      this.setState('AJUSTE');
+    }
+  }
+
+  triggerError() {
+    if (this.state === 'APAGADO') return;
+    if (this.monitorInterval) clearInterval(this.monitorInterval);
+    this.setState('ERROR');
+  }
+
+  reset() {
+    if (this.state !== 'ERROR') return;
+    this.modo = null;
+    this.setState('APAGADO');
+  }
+
+  _monitor() {
+    const s = this.state;
+    if (s === 'ACTIVO_FRIO') {
+      this.tempActual = Math.max(this.tempDeseada - 0.5, this.tempActual - 0.4);
+      if (Math.abs(this.tempActual - this.tempDeseada) <= 0.6) this.setState('MANTENIMIENTO');
+    } else if (s === 'ACTIVO_CALOR') {
+      this.tempActual = Math.min(this.tempDeseada + 0.5, this.tempActual + 0.4);
+      if (Math.abs(this.tempActual - this.tempDeseada) <= 0.6) this.setState('MANTENIMIENTO');
+    } else if (s === 'MANTENIMIENTO') {
+      const drift = (Math.random() - 0.45) * 0.15;
+      this.tempActual = Math.max(10, Math.min(40, this.tempActual + drift));
+      if (Math.abs(this.tempActual - this.tempDeseada) > 1.2) this.setState('AJUSTE');
+    } else if (s === 'AJUSTE') {
+      const dir = this.modo === 'FRIO' ? -0.3 : 0.3;
+      this.tempActual += dir;
+      if (Math.abs(this.tempActual - this.tempDeseada) <= 0.7) this.setState('MANTENIMIENTO');
+    }
+    render(this);
+  }
+}
+
+/* ── PARTICLES ── */
+const airflowEl = document.getElementById('airflow');
+let particles = [];
+
+function spawnParticles(color, count = 18) {
+  airflowEl.innerHTML = '';
+  particles = [];
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    p.className = 'prt';
+    const size = 2 + Math.random() * 5;
+    p.style.cssText = `
+      width:${size}px;height:${size}px;
+      background:${color}44;
+      left:${10 + Math.random() * 80}%;
+      top:${Math.random() * 20}px;
+      animation:fall ${1.8 + Math.random() * 1.5}s ease-in ${Math.random() * 2}s infinite;
+    `;
+    airflowEl.appendChild(p);
+    particles.push(p);
+  }
+}
+
+function clearParticles() { airflowEl.innerHTML = ''; }
+
+/* ── RENDER ── */
+function render(ac) {
+  const st = STATES[ac.state];
+  const color = st.color;
+  const compPct = Math.min(100, st.comp);
+
+  // CSS var
+  document.documentElement.style.setProperty('--state-color', color);
+
+  // Header badge
+  const badge = document.getElementById('stateBadge');
+  badge.textContent = ac.state.replace('_',' ');
+
+  // State panel
+  document.getElementById('stateName').textContent = st.name;
+  document.getElementById('stateDesc').textContent = st.desc;
+  const dot = document.getElementById('stateDot');
+  dot.classList.toggle('blink', ac.state === 'ERROR' || ac.state === 'ARRANQUE');
+
+  // Minisplit display
+  document.getElementById('msTempMain').textContent = ac.state === 'APAGADO' ? '--' : ac.tempActual.toFixed(1);
+  document.getElementById('msTarget').textContent = ac.state === 'APAGADO' ? '--' : ac.tempDeseada.toFixed(0);
+
+  // Mode icons
+  document.getElementById('iconCold').className = 'ms-icon' + (ac.modo === 'FRIO' ? ' on' : '');
+  document.getElementById('iconHeat').className = 'ms-icon' + (ac.modo === 'CALOR' ? ' on' : '');
+  document.getElementById('iconFan').className = 'ms-icon' + (['ACTIVO_FRIO','ACTIVO_CALOR','ARRANQUE','AJUSTE'].includes(ac.state) ? ' on' : '');
+
+  // Louver animation
+  const louver = document.getElementById('msLouver');
+  louver.classList.toggle('animated', ['ACTIVO_FRIO','ACTIVO_CALOR','ARRANQUE','AJUSTE'].includes(ac.state));
+
+  // LED
+  document.getElementById('msLedInner').style.background = color;
+  document.getElementById('msLed').style.borderColor = color;
+
+  // Remote
+  document.getElementById('remoteMode').textContent = ac.state === 'APAGADO' ? 'APAGADO' : (ac.modo || 'STANDBY');
+  document.getElementById('remoteTemp').textContent = ac.state === 'APAGADO' ? '--°' : ac.tempDeseada.toFixed(0) + '°';
+  document.getElementById('remoteMode').style.color = color;
+
+  // Metrics
+  document.getElementById('mActual').innerHTML = (ac.state === 'APAGADO' ? '--' : ac.tempActual.toFixed(1)) + '<span class="metric-unit">°C</span>';
+  document.getElementById('mTarget').innerHTML = (ac.state === 'APAGADO' ? '--' : ac.tempDeseada.toFixed(0)) + '<span class="metric-unit">°C</span>';
+  document.getElementById('mModo').textContent = ac.modo || '---';
+  document.getElementById('mComp').innerHTML = compPct + '<span class="metric-unit">%</span>';
+  document.getElementById('compBar').style.width = compPct + '%';
+  document.getElementById('compPct').textContent = compPct + '%';
+
+  // Airflow
+  const af = document.getElementById('airflow');
+  if (['ACTIVO_FRIO','ACTIVO_CALOR','ARRANQUE','AJUSTE'].includes(ac.state)) {
+    af.classList.add('on');
+    spawnParticles(color, 20);
+  } else {
+    af.classList.remove('on');
+    clearParticles();
+  }
+
+  // Room ambient
+  const ambient = document.getElementById('roomAmbient');
+  if (ac.state === 'ACTIVO_FRIO' || (ac.state === 'MANTENIMIENTO' && ac.modo === 'FRIO') || ac.state === 'AJUSTE' && ac.modo === 'FRIO') {
+    ambient.style.background = 'radial-gradient(ellipse at 50% 0%, #00d4ff08 0%, transparent 70%)';
+    ambient.style.opacity = '1';
+  } else if (ac.state === 'ACTIVO_CALOR' || (ac.state === 'MANTENIMIENTO' && ac.modo === 'CALOR')) {
+    ambient.style.background = 'radial-gradient(ellipse at 50% 0%, #ff6b3508 0%, transparent 70%)';
+    ambient.style.opacity = '1';
+  } else if (ac.state === 'ERROR') {
+    ambient.style.background = 'radial-gradient(ellipse at 50% 50%, #ff2d5506 0%, transparent 70%)';
+    ambient.style.opacity = '1';
+  } else {
+    ambient.style.opacity = '0';
+  }
+}
+
+/* ── LOG ── */
+function logTransition(from, to) {
+  const wrap = document.getElementById('logWrap');
+  const st = STATES[to];
+  const now = new Date();
+  const t = now.toTimeString().slice(0,8);
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.style.borderLeftColor = st.color;
+  entry.innerHTML = `<span class="log-time">${t}</span> <span class="log-state" style="color:${st.color}">${st.name.toUpperCase()}</span><br><span style="color:#3a4060">${from}</span> → <span style="color:${st.color}">${to}</span>`;
+  wrap.prepend(entry);
+  if (wrap.children.length > 30) wrap.lastChild.remove();
+}
+
+/* ── SIMULATION ── */
+let simRunning = false;
+let simSteps = [];
+let simIdx = 0;
+
+function toggleSim() {
+  if (simRunning) {
+    simRunning = false;
+    document.getElementById('simBtn').textContent = '▶ Simular ciclo';
+    document.getElementById('simBtn').classList.remove('running');
+    return;
+  }
+  simRunning = true;
+  document.getElementById('simBtn').textContent = '■ Detener';
+  document.getElementById('simBtn').classList.add('running');
+
+  const steps = [
+    () => { ac.apagar(); ac.tempActual = 28; },
+    () => ac.encender(),
+    () => ac.setModo('FRIO'),
+    null, null, null, null,
+    () => ac.adjustTemp(-2),
+    null, null, null,
+    () => ac.triggerError(),
+    () => ac.reset(),
+    () => ac.encender(),
+    () => ac.setModo('CALOR'),
+    null, null, null,
+    () => ac.apagar(),
+  ];
+
+  let i = 0;
+  function runStep() {
+    if (!simRunning || i >= steps.length) {
+      simRunning = false;
+      document.getElementById('simBtn').textContent = '▶ Simular ciclo';
+      document.getElementById('simBtn').classList.remove('running');
+      return;
+    }
+    if (steps[i]) steps[i]();
+    i++;
+    setTimeout(runStep, 1800);
+  }
+  runStep();
+}
+
+/* ── INIT ── */
+const ac = new AireAcondicionado();
+render(ac);
+logTransition('INICIO', 'APAGADO');
+</script>
+</body>
+</html>
