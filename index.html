@@ -439,6 +439,12 @@ function showError(msg) {
   entry.style.borderLeftColor = '#ff2d55';
   entry.innerHTML = `<span style="color:#ff2d55">ERROR:</span> ${msg}`;
   wrap.prepend(entry);
+  
+  // Mostrar alerta visual en el panel de estado
+  const stateDesc = document.getElementById('stateDesc');
+  if (stateDesc && msg.includes('conectar')) {
+    stateDesc.innerHTML = `<span style="color:#ff2d55">⚠️ ${msg}<br><br>Asegúrate de:<br>1. Ejecutar: python app.py<br>2. Abrir: http://localhost:5000</span>`;
+  }
 }
 
 /* ── PARTICLES ── */
@@ -602,6 +608,12 @@ async function startPolling() {
 const ac = new ACController();
 startPolling();
 logTransition('INICIO', 'APAGADO');
+
+// Detectar si se abrió el archivo localmente en lugar de por el servidor
+if (window.location.protocol === 'file:') {
+  showError('Archivo abierto localmente. Debes usar http://localhost:5000');
+  document.getElementById('stateDesc').innerHTML = '<span style="color:#ff2d55; font-size:14px;"><b>⚠️ ERROR CRÍTICO</b><br><br>Abriste el archivo HTML directamente.<br><br><b>Para que funcione:</b><br>1. Ejecuta en terminal:<br>   <code>python app.py</code><br>2. Abre en navegador:<br>   <code>http://localhost:5000</code><br><br>Los botones no funcionarán hasta que hagas esto.</span>';
+}
 </script>
 </body>
 </html>

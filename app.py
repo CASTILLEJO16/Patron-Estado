@@ -1,7 +1,10 @@
 """
 Backend Flask para integrar la interfaz web con el sistema AC en Python.
+Con simulación automática de temperatura y cambios de estado.
 """
 
+import threading
+import time
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from aire_acondicionado import AireAcondicionado
@@ -17,6 +20,43 @@ CORS(app)
 
 # Instancia global del AC
 ac = AireAcondicionado(temperatura_inicial=28.0)
+
+# Configuración de simulación automática
+SIMULACION_ACTIVA = True
+INTERVALO_SIMULACION = 1.0  # segundos entre cada ciclo de simulación (más rápido)
+
+# Thread de simulación
+def simulacion_automatica():
+    """Thread que simula automáticamente el comportamiento del AC."""
+    while SIMULACION_ACTIVA:
+        estado_class = ac._estado.__class__.__name__
+        
+        # Solo simular si no está apagado ni en error
+        if estado_class not in ['EstadoApagado', 'EstadoError']:
+            # Simular cambio de temperatura según el modo y estado
+            if estado_class in ['EstadoArranque', 'EstadoActivoFrio', 'EstadoAjuste'] and ac.modo == 'FRIO':
+                # Enfriando: bajar temperatura
+                if ac.temperatura_actual > ac.temperatura_deseada:
+                    ac.temperatura_actual = max(ac.temperatura_deseada - 0.5, ac.temperatura_actual - 0.8)
+            elif estado_class in ['EstadoArranque', 'EstadoActivoCalor', 'EstadoAjuste'] and ac.modo == 'CALOR':
+                # Calentando: subir temperatura
+                if ac.temperatura_actual < ac.temperatura_deseada:
+                    ac.temperatura_actual = min(ac.temperatura_deseada + 0.5, ac.temperatura_actual + 0.8)
+            elif estado_class == 'EstadoMantenimiento':
+                # Mantenimiento: pequeñas fluctuaciones
+                diff = ac.temperatura_deseada - ac.temperatura_actual
+                if abs(diff) > 0.3:
+                    # Ajustar suavemente hacia el objetivo
+                    ac.temperatura_actual += diff * 0.1
+            
+            # Llamar a monitorear para que el estado evalúe transiciones
+            ac.monitorear()
+        
+        time.sleep(INTERVALO_SIMULACION)
+
+# Iniciar thread de simulación
+thread_simulacion = threading.Thread(target=simulacion_automatica, daemon=True)
+thread_simulacion.start()
 
 # Mapeo de nombres de estado
 ESTADO_NAMES = {
@@ -88,9 +128,20 @@ def api_apagar():
 
 @app.route('/api/modo', methods=['POST'])
 def api_set_modo():
-    """Establece el modo (FRIO/CALOR)."""
+    """Establece el modo (FRIO/CALOR) y ajusta temperatura inicial para simulación."""
     data = request.get_json()
     modo = data.get('modo', 'FRIO')
+    
+    # Ajustar temperatura según el modo para que se vea el efecto
+    if modo == 'FRIO':
+        # Para frío: empezar con temperatura alta para que baje
+        if ac.temperatura_actual <= ac.temperatura_deseada:
+            ac.temperatura_actual = 28.0  # Reset a temperatura caliente
+    elif modo == 'CALOR':
+        # Para calor: empezar con temperatura baja para que suba
+        if ac.temperatura_actual >= ac.temperatura_deseada:
+            ac.temperatura_actual = 15.0  # Reset a temperatura fría
+    
     ac.set_modo(modo)
     return jsonify(get_estado_info())
 
